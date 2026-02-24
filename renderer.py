@@ -3,6 +3,7 @@ renderer.py
 """
 
 import pygame
+import math
 from typing import Tuple
 from engine import Universe
 
@@ -56,8 +57,8 @@ class Renderer:
         return sx, sy
 
     def screen_to_world(self, sx: int, sy: int) -> Tuple[int, int]:
-        x = int((sx - self.offset_x) / self.cell_size)
-        y = int((sy - self.offset_y) / self.cell_size)        
+        x = math.floor((sx - self.offset_x) / self.cell_size)
+        y = math.floor((sy - self.offset_y) / self.cell_size)        
         return x, y
 
     def display_info(self) -> None:
