@@ -41,6 +41,8 @@ class Renderer:
         self.cell_color = (0, 200, 120)
 
         self.simulation_interval = 0.5 # seconds per generation(2 gen / sec)
+        self.min_interval = 0.02   #50 generations per second max
+        self.max_interval = 1.0    #1 generations per second min
         self.accumulator = 0.0
 
         self.running = True
@@ -50,6 +52,10 @@ class Renderer:
 
         self.grid_color = (40, 40, 40)
         self.show_grid = True
+
+        self.target_fps = 30
+
+        
     
     def world_to_screen(self, x: int, y: int) -> Tuple[int, int]:
         sx = x*self.cell_size + self.offset_x
@@ -65,11 +71,12 @@ class Renderer:
         """Display Info about population, generation etc"""
         population = self.universe.population()
         generation = self.universe.generation
-
+        target_fps = self.target_fps
         info_text = (
             f"Generation: {generation}   "
             f"Population: {population}   "
-            f"Speed: {1/self.simulation_interval:.2f} gen/s"
+            f"Speed: {1/self.simulation_interval:.2f} gen/s   "
+            f"FPS: {target_fps}   "
         )
         text_surface = self.font.render(info_text, True, (200, 200, 200))
         self.screen.blit(text_surface, (10, 10))
@@ -120,6 +127,18 @@ class Renderer:
                     self.universe.clear()
                 elif event.key == pygame.K_g:
                     self.show_grid = not self.show_grid
+                elif event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS:
+                    # Increase simulation speed
+                    self.simulation_interval = max(
+                        self.min_interval,
+                        self.simulation_interval / 1.5
+                    )
+                elif event.key == pygame.K_MINUS:
+                    # Decrease simulation speed
+                    self.simulation_interval = min(
+                        self.max_interval,
+                        self.simulation_interval * 1.5
+                    )
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 self.paused = True
                 mx, my = pygame.mouse.get_pos()
@@ -159,7 +178,7 @@ class Renderer:
                 # self.offset_y = self.height // 2
 
     def run(self) -> None:
-        target_fps = 30
+        target_fps = self.target_fps
 
         while self.running:
             # how much time last frame took(ms->s)
