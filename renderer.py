@@ -28,7 +28,9 @@ class Renderer:
 
         self.clock = pygame.time.Clock()
 
-        self.cell_size = 20 #20px height 20px width
+        self.min_cell_size = 1
+        self.max_cell_size = 20
+        self.cell_size = 20 
         #forces offsets to align with grid boundaries, (0, 0) cell coordinate represents
         # top left corner of the cell
         self.offset_x = (self.width // 2) - ((self.width // 2) % self.cell_size)
@@ -54,8 +56,8 @@ class Renderer:
         return sx, sy
 
     def screen_to_world(self, sx: int, sy: int) -> Tuple[int, int]:
-        x = (sx - self.offset_x) // self.cell_size
-        y = (sy - self.offset_y) // self.cell_size        
+        x = int((sx - self.offset_x) / self.cell_size)
+        y = int((sy - self.offset_y) / self.cell_size)        
         return x, y
 
     def display_info(self) -> None:
@@ -72,7 +74,7 @@ class Renderer:
         self.screen.blit(text_surface, (10, 10))
     
     def draw_grid(self) -> None:
-        if not self.show_grid:
+        if not self.show_grid or self.cell_size < 5:
             return
         # Vertical lines
         first_vertical = (self.offset_x) % self.cell_size
@@ -117,18 +119,42 @@ class Renderer:
                     self.universe.clear()
                 elif event.key == pygame.K_g:
                     self.show_grid = not self.show_grid
-            elif event.type == pygame.MOUSEBUTTONDOWN:
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 self.paused = True
                 mx, my = pygame.mouse.get_pos()
                 x, y = self.screen_to_world(mx, my)
                 self.universe.toggle_cell(x, y)
+            elif event.type == pygame.MOUSEWHEEL:
+                #screen center
+                cx = self.width // 2
+                cy = self.height // 2
+
+                 # World coordinate at screen center BEFORE zoom
+                world_x = (cx - self.offset_x) / self.cell_size
+                world_y = (cy - self.offset_y) / self.cell_size
+
+                zoom_factor = 1.1
+
+                if event.y > 0:
+                    new_size = min(max(1, round(self.cell_size * zoom_factor)), self.max_cell_size)
+                else:
+                    new_size = max(round(self.cell_size / zoom_factor), self.min_cell_size)
+                if new_size == self.cell_size:
+                    return
+
+                self.cell_size = new_size
+
+                #Recalculate offset so center stays stable
+                self.offset_x = int(cx - world_x * self.cell_size)
+                self.offset_y = int(cy - world_y * self.cell_size)
+
             elif event.type == pygame.VIDEORESIZE:
                 self.width, self.height = event.size
                 self.screen = pygame.display.set_mode(event.size, pygame.RESIZABLE)
                 # Recalculate offset but snap to grid
-                self.offset_x = (self.width // 2) - ((self.width // 2) % self.cell_size)
-                self.offset_y = (self.height // 2) - ((self.height // 2) % self.cell_size)
-                # self.offset_x = self.width // 2
+                # self.offset_x = (self.width // 2) - ((self.width // 2) % self.cell_size)
+                # self.offset_y = (self.height // 2) - ((self.height // 2) % self.cell_size)
+                # # self.offset_x = self.width // 2
                 # self.offset_y = self.height // 2
 
     def run(self) -> None:
