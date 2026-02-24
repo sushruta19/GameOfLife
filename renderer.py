@@ -29,9 +29,11 @@ class Renderer:
         self.clock = pygame.time.Clock()
 
         self.cell_size = 20 #20px height 20px width
-        self.offset_x = self.width // 2
-        self.offset_y = self.height // 2
-
+        #forces offsets to align with grid boundaries, (0, 0) cell coordinate represents
+        # top left corner of the cell
+        self.offset_x = (self.width // 2) - ((self.width // 2) % self.cell_size)
+        self.offset_y = (self.height // 2) - ((self.height // 2) % self.cell_size)
+        
         self.bg_color = (15, 15, 15)
         self.cell_color = (0, 200, 120)
 
@@ -42,6 +44,9 @@ class Renderer:
         self.paused = True
 
         self.font = pygame.font.Font(None, 20)
+
+        self.grid_color = (40, 40, 40)
+        self.show_grid = True
     
     def world_to_screen(self, x: int, y: int) -> Tuple[int, int]:
         sx = x*self.cell_size + self.offset_x
@@ -65,9 +70,32 @@ class Renderer:
         )
         text_surface = self.font.render(info_text, True, (200, 200, 200))
         self.screen.blit(text_surface, (10, 10))
-        
+    
+    def draw_grid(self) -> None:
+        if not self.show_grid:
+            return
+        # Vertical lines
+        first_vertical = (self.offset_x) % self.cell_size
+        for x in range(first_vertical, self.width, self.cell_size):
+            pygame.draw.line(
+                self.screen,
+                self.grid_color,
+                (x, 0),
+                (x, self.height)
+            )
+
+        # Horizontal lines
+        first_horizontal = (self.offset_y) % self.cell_size
+        for y in range(first_horizontal, self.height, self.cell_size):
+            pygame.draw.line(
+                self.screen,
+                self.grid_color,
+                (0, y),
+                (self.width, y)
+            )
     def draw(self) -> None:
         self.screen.fill(self.bg_color)
+        self.draw_grid()
 
         for (x, y) in self.universe.live_cells:
             sx, sy = self.world_to_screen(x, y)
@@ -87,6 +115,8 @@ class Renderer:
                 elif event.key == pygame.K_c:
                     self.paused = True
                     self.universe.clear()
+                elif event.key == pygame.K_g:
+                    self.show_grid = not self.show_grid
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 self.paused = True
                 mx, my = pygame.mouse.get_pos()
@@ -95,8 +125,11 @@ class Renderer:
             elif event.type == pygame.VIDEORESIZE:
                 self.width, self.height = event.size
                 self.screen = pygame.display.set_mode(event.size, pygame.RESIZABLE)
-                self.offset_x = self.width // 2
-                self.offset_y = self.height // 2
+                # Recalculate offset but snap to grid
+                self.offset_x = (self.width // 2) - ((self.width // 2) % self.cell_size)
+                self.offset_y = (self.height // 2) - ((self.height // 2) % self.cell_size)
+                # self.offset_x = self.width // 2
+                # self.offset_y = self.height // 2
 
     def run(self) -> None:
         target_fps = 30
