@@ -55,6 +55,22 @@ class Renderer:
 
         self.target_fps = 30
 
+        #Menu bar variables and button definitions ---
+        self.menu_height = 40
+        self.menu_bg_color = (50, 50, 50)
+        self.button_color = (100, 100, 100)
+        self.button_hover_color = (150, 150, 150)
+        self.text_color = (255, 255, 255)
+        
+        # Define button rectangles (x, y, width, height)
+        self.menu_buttons = {
+            "Play/Pause": pygame.Rect(10, 5, 100, 30),
+            "Clear": pygame.Rect(120, 5, 80, 30),
+            "Toggle Grid": pygame.Rect(210, 5, 100, 30),
+            "Speed +": pygame.Rect(320, 5, 80, 30),
+            "Speed -": pygame.Rect(410, 5, 80, 30)
+        }
+
         
     
     def world_to_screen(self, x: int, y: int) -> Tuple[int, int]:
@@ -79,8 +95,25 @@ class Renderer:
             f"FPS: {target_fps}   "
         )
         text_surface = self.font.render(info_text, True, (200, 200, 200))
-        self.screen.blit(text_surface, (10, 10))
+        self.screen.blit(text_surface, (10, self.menu_height+10))
     
+    def draw_menu(self) -> None:
+        # Draw menu background
+        pygame.draw.rect(self.screen, self.menu_bg_color, (0, 0, self.width, self.menu_height))
+        
+        mx, my = pygame.mouse.get_pos()
+        
+        # Draw buttons
+        for text, rect in self.menu_buttons.items():
+            # Apply hover effect if mouse is over the button
+            color = self.button_hover_color if rect.collidepoint(mx, my) else self.button_color
+            pygame.draw.rect(self.screen, color, rect, border_radius=5)
+            
+            # Render text centered in the button
+            text_surf = self.font.render(text, True, self.text_color)
+            text_rect = text_surf.get_rect(center=rect.center)
+            self.screen.blit(text_surf, text_rect)
+
     def draw_grid(self) -> None:
         if not self.show_grid or self.cell_size < 5:
             return
@@ -111,6 +144,8 @@ class Renderer:
             sx, sy = self.world_to_screen(x, y)
             rect = pygame.Rect(sx, sy, self.cell_size, self.cell_size)
             pygame.draw.rect(self.screen, self.cell_color, rect)
+        
+        self.draw_menu()
         self.display_info()
         #bringing all changes to actual screen display
         pygame.display.flip()
@@ -140,10 +175,28 @@ class Renderer:
                         self.simulation_interval * 1.5
                     )
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                self.paused = True
                 mx, my = pygame.mouse.get_pos()
-                x, y = self.screen_to_world(mx, my)
-                self.universe.toggle_cell(x, y)
+                
+                #Distinguish between menu clicks and grid clicks ---
+                if my < self.menu_height:
+                    # Handle menu button clicks
+                    if self.menu_buttons["Play/Pause"].collidepoint(mx, my):
+                        self.paused = not self.paused
+                    elif self.menu_buttons["Clear"].collidepoint(mx, my):
+                        self.paused = True
+                        self.universe.clear()
+                    elif self.menu_buttons["Toggle Grid"].collidepoint(mx, my):
+                        self.show_grid = not self.show_grid
+                    elif self.menu_buttons["Speed +"].collidepoint(mx, my):
+                        self.simulation_interval = max(self.min_interval, self.simulation_interval / 1.5)
+                    elif self.menu_buttons["Speed -"].collidepoint(mx, my):
+                        self.simulation_interval = min(self.max_interval, self.simulation_interval * 1.5)
+                else:
+                    # Handle grid cell toggling if click is below the menu bar
+                    self.paused = True
+                    x, y = self.screen_to_world(mx, my)
+                    self.universe.toggle_cell(x, y)
+
             elif event.type == pygame.MOUSEWHEEL:
                 #screen center
                 cx = self.width // 2
