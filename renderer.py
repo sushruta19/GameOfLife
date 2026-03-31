@@ -40,9 +40,10 @@ class Renderer:
         self.bg_color = (15, 15, 15)
         self.cell_color = (0, 200, 120)
 
-        self.simulation_interval = 0.5 # seconds per generation(2 gen / sec)
-        self.min_interval = 0.02   #50 generations per second max
-        self.max_interval = 1.0    #1 generations per second min
+        self.gen_per_sec = 2
+        self.min_gen_per_sec = 1
+        self.max_gen_per_sec = 50
+        self.simulation_interval = 1.0 / self.gen_per_sec
         self.accumulator = 0.0
 
         self.running = True
@@ -91,7 +92,7 @@ class Renderer:
         info_text = (
             f"Generation: {generation}   "
             f"Population: {population}   "
-            f"Speed: {1/self.simulation_interval:.2f} gen/s   "
+            f"Speed: {self.gen_per_sec} gen/s   "
             f"FPS: {target_fps}   "
         )
         text_surface = self.font.render(info_text, True, (200, 200, 200))
@@ -164,16 +165,14 @@ class Renderer:
                     self.show_grid = not self.show_grid
                 elif event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS:
                     # Increase simulation speed
-                    self.simulation_interval = max(
-                        self.min_interval,
-                        self.simulation_interval / 1.5
-                    )
+                    self.gen_per_sec = min(self.max_gen_per_sec, self.gen_per_sec + 1)
+                    self.simulation_interval = 1.0 / self.gen_per_sec
+
                 elif event.key == pygame.K_MINUS:
                     # Decrease simulation speed
-                    self.simulation_interval = min(
-                        self.max_interval,
-                        self.simulation_interval * 1.5
-                    )
+                    self.gen_per_sec = max(self.min_gen_per_sec, self.gen_per_sec - 1)
+                    self.simulation_interval = 1.0 / self.gen_per_sec
+
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mx, my = pygame.mouse.get_pos()
                 
@@ -188,9 +187,11 @@ class Renderer:
                     elif self.menu_buttons["Toggle Grid"].collidepoint(mx, my):
                         self.show_grid = not self.show_grid
                     elif self.menu_buttons["Speed +"].collidepoint(mx, my):
-                        self.simulation_interval = max(self.min_interval, self.simulation_interval / 1.5)
+                        self.gen_per_sec = min(self.max_gen_per_sec, self.gen_per_sec + 1)
+                        self.simulation_interval = 1.0 / self.gen_per_sec
                     elif self.menu_buttons["Speed -"].collidepoint(mx, my):
-                        self.simulation_interval = min(self.max_interval, self.simulation_interval * 1.5)
+                        self.gen_per_sec = max(self.min_gen_per_sec, self.gen_per_sec - 1)
+                        self.simulation_interval = 1.0 / self.gen_per_sec
                 else:
                     # Handle grid cell toggling if click is below the menu bar
                     self.paused = True
