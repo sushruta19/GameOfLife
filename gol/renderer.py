@@ -6,6 +6,7 @@ import pygame
 import math
 from typing import Tuple
 from engine import Universe
+from patterns import PATTERNS
 
 class Renderer:
     def __init__(self, universe: Universe) -> None:
@@ -25,7 +26,7 @@ class Renderer:
             pygame.RESIZABLE    
         )
         print("Window created.")
-        pygame.display.set_caption("Conway's Game of Life")
+        pygame.display.set_caption("Conway's Game of Life - Soubhik")
 
         self.clock = pygame.time.Clock()
 
@@ -72,7 +73,18 @@ class Renderer:
             "Speed -": pygame.Rect(410, 5, 80, 30)
         }
 
+        # Context Menu state variables
+        self.context_menu_active = False
+        self.context_menu_pos = (0, 0)
+        self.context_world_pos = (0, 0)
         
+        self.cm_width = 150
+        self.cm_item_height = 30
+        self.cm_bg_color = (60, 60, 60)
+        self.cm_hover_color = (90, 90, 90)
+        
+        self.categories = list(PATTERNS.keys())
+
     
     def world_to_screen(self, x: int, y: int) -> Tuple[int, int]:
         sx = x*self.cell_size + self.offset_x
@@ -137,6 +149,93 @@ class Renderer:
                 (0, y),
                 (self.width, y)
             )
+
+    def draw_context_menu(self) -> None:
+        if not self.context_menu_active:
+            return
+            
+        mx, my = pygame.mouse.get_pos()
+        x, y = self.context_menu_pos
+        
+        # 1. Check if hovering over any MAIN category to update the active one
+        for i, category in enumerate(self.categories):
+            rect = pygame.Rect(x, y + i * self.cm_item_height, self.cm_width, self.cm_item_height)
+            if rect.collidepoint(mx, my):
+                self.context_menu_active_category = category
+                break
+                
+        # 2. Draw the MAIN categories
+        for i, category in enumerate(self.categories):
+            rect = pygame.Rect(x, y + i * self.cm_item_height, self.cm_width, self.cm_item_height)
+            
+            # Highlight if it's the active category
+            is_active = (category == self.context_menu_active_category)
+            color = self.cm_hover_color if is_active else self.cm_bg_color
+            
+            pygame.draw.rect(self.screen, color, rect)
+            pygame.draw.rect(self.screen, (20, 20, 20), rect, 1) # Border
+            
+            text_surf = self.font.render(category + " >", True, self.text_color)
+            self.screen.blit(text_surf, (rect.x + 10, rect.y + 7))
+            
+        # 3. Draw the SUB-MENU ONLY for the currently active category
+        if self.context_menu_active_category:
+            category = self.context_menu_active_category
+            i = self.categories.index(category)
+            
+            sub_patterns = list(PATTERNS[category].keys())
+            sub_x = x + self.cm_width
+            sub_y = y + i * self.cm_item_height
+            
+            for j, pattern_name in enumerate(sub_patterns):
+                p_rect = pygame.Rect(sub_x, sub_y + j * self.cm_item_height, self.cm_width, self.cm_item_height)
+                p_color = self.cm_hover_color if p_rect.collidepoint(mx, my) else self.cm_bg_color
+                
+                pygame.draw.rect(self.screen, p_color, p_rect)
+                pygame.draw.rect(self.screen, (20, 20, 20), p_rect, 1)
+                
+                p_surf = self.font.render(pattern_name, True, self.text_color)
+                self.screen.blit(p_surf, (p_rect.x + 10, p_rect.y + 7))
+
+    def handle_context_menu_click(self, mx: int, my: int) -> bool:
+        if not self.context_menu_active:
+            return False
+            
+        x, y = self.context_menu_pos
+        
+        # Check if clicked a main category
+        for i, category in enumerate(self.categories):
+            rect = pygame.Rect(x, y + i * self.cm_item_height, self.cm_width, self.cm_item_height)
+            if rect.collidepoint(mx, my):
+                return True # Clicked the category header, just intercept the click
+                
+        # Check if clicked a sub-menu item of the ACTIVE category
+        if self.context_menu_active_category:
+            category = self.context_menu_active_category
+            i = self.categories.index(category)
+            sub_patterns = list(PATTERNS[category].keys())
+            sub_x = x + self.cm_width
+            sub_y = y + i * self.cm_item_height
+            
+            for j, pattern_name in enumerate(sub_patterns):
+                p_rect = pygame.Rect(sub_x, sub_y + j * self.cm_item_height, self.cm_width, self.cm_item_height)
+                if p_rect.collidepoint(mx, my):
+                    # Load the pattern
+                    pattern_coords = PATTERNS[category][pattern_name]
+                    wx, wy = self.context_world_pos
+                    self.universe.load_pattern(pattern_coords, offset_x=wx, offset_y=wy)
+                    
+                    # Close menu
+                    self.context_menu_active = False
+                    self.context_menu_active_category = None
+                    return True
+                    
+        # Clicked completely outside
+        self.context_menu_active = False
+        self.context_menu_active_category = None
+        return False
+    
+    
     def draw(self) -> None:
         self.screen.fill(self.bg_color)
         self.draw_grid()
@@ -148,6 +247,7 @@ class Renderer:
         
         self.draw_menu()
         self.display_info()
+        self.draw_context_menu()
         #bringing all changes to actual screen display
         pygame.display.flip()
 
@@ -172,31 +272,54 @@ class Renderer:
                     # Decrease simulation speed
                     self.gen_per_sec = max(self.min_gen_per_sec, self.gen_per_sec - 1)
                     self.simulation_interval = 1.0 / self.gen_per_sec
+                
+                # Close context menu on any key press
+                self.context_menu_active = False
 
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = pygame.mouse.get_pos()
                 
-                #Distinguish between menu clicks and grid clicks ---
+                # 1. If context menu is open, see if it intercepts the left click first
+                if self.context_menu_active and event.button == 1:
+                    if self.handle_context_menu_click(mx, my):
+                        continue
+                    # If they clicked somewhere else while it was open, close it
+                    self.context_menu_active = False
+                    
+                # 2. Distinguish between menu area clicks and grid area clicks
                 if my < self.menu_height:
-                    # Handle menu button clicks
-                    if self.menu_buttons["Play/Pause"].collidepoint(mx, my):
-                        self.paused = not self.paused
-                    elif self.menu_buttons["Clear"].collidepoint(mx, my):
-                        self.paused = True
-                        self.universe.clear()
-                    elif self.menu_buttons["Toggle Grid"].collidepoint(mx, my):
-                        self.show_grid = not self.show_grid
-                    elif self.menu_buttons["Speed +"].collidepoint(mx, my):
-                        self.gen_per_sec = min(self.max_gen_per_sec, self.gen_per_sec + 1)
-                        self.simulation_interval = 1.0 / self.gen_per_sec
-                    elif self.menu_buttons["Speed -"].collidepoint(mx, my):
-                        self.gen_per_sec = max(self.min_gen_per_sec, self.gen_per_sec - 1)
-                        self.simulation_interval = 1.0 / self.gen_per_sec
+                    # MENU AREA LOGIC
+                    if event.button == 1:
+                        if self.menu_buttons["Play/Pause"].collidepoint(mx, my):
+                            self.paused = not self.paused
+                        elif self.menu_buttons["Clear"].collidepoint(mx, my):
+                            self.paused = True
+                            self.universe.clear()
+                        elif self.menu_buttons["Toggle Grid"].collidepoint(mx, my):
+                            self.show_grid = not self.show_grid
+                        elif self.menu_buttons["Speed +"].collidepoint(mx, my):
+                            self.gen_per_sec = min(self.max_gen_per_sec, self.gen_per_sec + 1)
+                            self.simulation_interval = 1.0 / self.gen_per_sec
+                        elif self.menu_buttons["Speed -"].collidepoint(mx, my):
+                            self.gen_per_sec = max(self.min_gen_per_sec, self.gen_per_sec - 1)
+                            self.simulation_interval = 1.0 / self.gen_per_sec
                 else:
-                    # Handle grid cell toggling if click is below the menu bar
-                    self.paused = True
-                    x, y = self.screen_to_world(mx, my)
-                    self.universe.toggle_cell(x, y)
+                    # GRID AREA LOGIC
+                    keys = pygame.key.get_pressed()
+                    is_ctrl_pressed = keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]
+                    
+                    if event.button == 3 and is_ctrl_pressed:
+                        # Ctrl + Right Click inside grid area -> Open Context Menu
+                        self.context_menu_active = True
+                        self.context_menu_pos = (mx, my)
+                        self.context_world_pos = self.screen_to_world(mx, my)
+                        self.paused = True # Pause simulation while picking a pattern
+                    
+                    elif event.button == 1:
+                        # Left Click inside grid area -> Toggle cell
+                        self.paused = True
+                        x, y = self.screen_to_world(mx, my)
+                        self.universe.toggle_cell(x, y)
 
             elif event.type == pygame.MOUSEWHEEL:
                 #screen center
