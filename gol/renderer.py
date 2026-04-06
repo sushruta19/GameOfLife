@@ -4,9 +4,11 @@ renderer.py
 
 import pygame
 import math
+import multiprocessing as mp
 from typing import Tuple
 from engine import Universe
 from patterns import PATTERNS
+from graph import run_graph  # Import our new graph process function
 
 class Renderer:
     def __init__(self, universe: Universe) -> None:
@@ -70,7 +72,8 @@ class Renderer:
             "Clear": pygame.Rect(120, 5, 80, 30),
             "Toggle Grid": pygame.Rect(210, 5, 100, 30),
             "Speed +": pygame.Rect(320, 5, 80, 30),
-            "Speed -": pygame.Rect(410, 5, 80, 30)
+            "Speed -": pygame.Rect(410, 5, 80, 30),
+             "Graph": pygame.Rect(500, 5, 80, 30) # NEW Graph button
         }
 
         # Context Menu state variables
@@ -84,6 +87,11 @@ class Renderer:
         self.cm_hover_color = (90, 90, 90)
         
         self.categories = list(PATTERNS.keys())
+
+        # Multiprocessing state variables for the Live Graph
+        self.graph_process = None
+        self.graph_queue = None
+        self.last_graphed_gen = -1
 
     
     def world_to_screen(self, x: int, y: int) -> Tuple[int, int]:
@@ -303,6 +311,17 @@ class Renderer:
                         elif self.menu_buttons["Speed -"].collidepoint(mx, my):
                             self.gen_per_sec = max(self.min_gen_per_sec, self.gen_per_sec - 1)
                             self.simulation_interval = 1.0 / self.gen_per_sec
+                        elif self.menu_buttons["Graph"].collidepoint(mx, my):
+                            # START MULTIPROCESSING GRAPH
+                            if self.graph_process is None or not self.graph_process.is_alive():
+                                self.graph_queue = mp.Queue()
+                                self.graph_process = mp.Process(target=run_graph, args=(self.graph_queue,))
+                                self.graph_process.daemon = True
+                                self.graph_process.start()
+                                
+                                # Send initial point
+                                self.graph_queue.put((self.universe.generation, self.universe.population()))
+                                self.last_graphed_gen = self.universe.generation
                 else:
                     # GRID AREA LOGIC
                     keys = pygame.key.get_pressed()
@@ -368,6 +387,13 @@ class Renderer:
                 while self.accumulator >= self.simulation_interval:
                     self.universe.step()
                     self.accumulator -= self.simulation_interval
+
+                    # Push to graph queue if graph is running
+                    if self.graph_process and self.graph_process.is_alive():
+                        current_gen = self.universe.generation
+                        if current_gen != self.last_graphed_gen:
+                            self.graph_queue.put((current_gen, self.universe.population()))
+                            self.last_graphed_gen = current_gen
             else:
                 self.accumulator = 0.0
             self.draw()
