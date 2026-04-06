@@ -4,8 +4,11 @@ renderer.py (p2life variant)
 
 import pygame
 import math
+import multiprocessing as mp
 from typing import Tuple
 from engine import Universe, WHITE, BLACK
+from patterns import PATTERNS
+from graph import run_graph
 
 class Renderer:
     def __init__(self, universe: Universe) -> None:
@@ -25,7 +28,7 @@ class Renderer:
             pygame.RESIZABLE    
         )
         print("Window created.")
-        pygame.display.set_caption("P2Life: Two-Player Conway's Game of Life")
+        pygame.display.set_caption("P2Life: Two-Player Conway's Game of Life - Soubhik")
 
         self.clock = pygame.time.Clock()
 
@@ -33,15 +36,12 @@ class Renderer:
         self.max_cell_size = 20
         self.cell_size = 20 
         
-        # forces offsets to align with grid boundaries
         self.offset_x = (self.width // 2) - ((self.width // 2) % self.cell_size)
         self.offset_y = (self.height // 2) - ((self.height // 2) % self.cell_size)
         
         self.bg_color = (15, 15, 15)
-        
-        # We define two colors now instead of one
-        self.p1_color = (0, 200, 120)    # Green (Maps to WHITE in engine)
-        self.p2_color = (200, 40, 40)    # Red   (Maps to BLACK in engine)
+        self.p1_color = (0, 200, 120)    # Green (WHITE)
+        self.p2_color = (200, 40, 40)    # Red   (BLACK)
 
         self.gen_per_sec = 2
         self.min_gen_per_sec = 1
@@ -59,21 +59,37 @@ class Renderer:
 
         self.target_fps = 30
 
-        # Menu bar variables and button definitions
         self.menu_height = 40
         self.menu_bg_color = (50, 50, 50)
         self.button_color = (100, 100, 100)
         self.button_hover_color = (150, 150, 150)
         self.text_color = (255, 255, 255)
         
-        # Define button rectangles (x, y, width, height)
         self.menu_buttons = {
             "Play/Pause": pygame.Rect(10, 5, 100, 30),
             "Clear": pygame.Rect(120, 5, 80, 30),
             "Toggle Grid": pygame.Rect(210, 5, 100, 30),
             "Speed +": pygame.Rect(320, 5, 80, 30),
-            "Speed -": pygame.Rect(410, 5, 80, 30)
+            "Speed -": pygame.Rect(410, 5, 80, 30),
+            "Graph": pygame.Rect(500, 5, 80, 30)
         }
+
+        # Context Menu
+        self.context_menu_active = False
+        self.context_menu_pos = (0, 0)
+        self.context_world_pos = (0, 0)
+        self.context_menu_active_category = None
+        
+        self.cm_width = 150
+        self.cm_item_height = 30
+        self.cm_bg_color = (60, 60, 60)
+        self.cm_hover_color = (90, 90, 90)
+        self.categories = list(PATTERNS.keys())
+
+        # Multiprocessing state variables
+        self.graph_process = None
+        self.graph_queue = None
+        self.last_graphed_gen = -1
 
     def world_to_screen(self, x: int, y: int) -> Tuple[int, int]:
         sx = x * self.cell_size + self.offset_x
@@ -86,8 +102,6 @@ class Renderer:
         return x, y
 
     def display_info(self) -> None:
-        """Display Info about population, generation etc"""
-        # Population now returns two values!
         p1_pop, p2_pop = self.universe.population()
         generation = self.universe.generation
         target_fps = self.target_fps
@@ -102,18 +116,11 @@ class Renderer:
         self.screen.blit(text_surface, (10, self.menu_height + 10))
     
     def draw_menu(self) -> None:
-        # Draw menu background
         pygame.draw.rect(self.screen, self.menu_bg_color, (0, 0, self.width, self.menu_height))
-        
         mx, my = pygame.mouse.get_pos()
-        
-        # Draw buttons
         for text, rect in self.menu_buttons.items():
-            # Apply hover effect if mouse is over the button
             color = self.button_hover_color if rect.collidepoint(mx, my) else self.button_color
             pygame.draw.rect(self.screen, color, rect, border_radius=5)
-            
-            # Render text centered in the button
             text_surf = self.font.render(text, True, self.text_color)
             text_rect = text_surf.get_rect(center=rect.center)
             self.screen.blit(text_surf, text_rect)
@@ -121,35 +128,94 @@ class Renderer:
     def draw_grid(self) -> None:
         if not self.show_grid or self.cell_size < 5:
             return
-        # Vertical lines
         first_vertical = (self.offset_x) % self.cell_size
         for x in range(first_vertical, self.width, self.cell_size):
-            pygame.draw.line(
-                self.screen,
-                self.grid_color,
-                (x, 0),
-                (x, self.height)
-            )
-
-        # Horizontal lines
+            pygame.draw.line(self.screen, self.grid_color, (x, 0), (x, self.height))
         first_horizontal = (self.offset_y) % self.cell_size
         for y in range(first_horizontal, self.height, self.cell_size):
-            pygame.draw.line(
-                self.screen,
-                self.grid_color,
-                (0, y),
-                (self.width, y)
-            )
+            pygame.draw.line(self.screen, self.grid_color, (0, y), (self.width, y))
 
+    def draw_context_menu(self) -> None:
+        if not self.context_menu_active:
+            return
+            
+        mx, my = pygame.mouse.get_pos()
+        x, y = self.context_menu_pos
+        
+        for i, category in enumerate(self.categories):
+            rect = pygame.Rect(x, y + i * self.cm_item_height, self.cm_width, self.cm_item_height)
+            if rect.collidepoint(mx, my):
+                self.context_menu_active_category = category
+                break
+                
+        for i, category in enumerate(self.categories):
+            rect = pygame.Rect(x, y + i * self.cm_item_height, self.cm_width, self.cm_item_height)
+            is_active = (category == self.context_menu_active_category)
+            color = self.cm_hover_color if is_active else self.cm_bg_color
+            pygame.draw.rect(self.screen, color, rect)
+            pygame.draw.rect(self.screen, (20, 20, 20), rect, 1)
+            text_surf = self.font.render(category + " >", True, self.text_color)
+            self.screen.blit(text_surf, (rect.x + 10, rect.y + 7))
+            
+        if self.context_menu_active_category:
+            category = self.context_menu_active_category
+            i = self.categories.index(category)
+            sub_patterns = list(PATTERNS[category].keys())
+            sub_x = x + self.cm_width
+            sub_y = y + i * self.cm_item_height
+            
+            for j, pattern_name in enumerate(sub_patterns):
+                p_rect = pygame.Rect(sub_x, sub_y + j * self.cm_item_height, self.cm_width, self.cm_item_height)
+                p_color = self.cm_hover_color if p_rect.collidepoint(mx, my) else self.cm_bg_color
+                pygame.draw.rect(self.screen, p_color, p_rect)
+                pygame.draw.rect(self.screen, (20, 20, 20), p_rect, 1)
+                p_surf = self.font.render(pattern_name, True, self.text_color)
+                self.screen.blit(p_surf, (p_rect.x + 10, p_rect.y + 7))
+
+    def handle_context_menu_click(self, mx: int, my: int, button: int) -> bool:
+        if not self.context_menu_active:
+            return False
+            
+        x, y = self.context_menu_pos
+        for i, category in enumerate(self.categories):
+            rect = pygame.Rect(x, y + i * self.cm_item_height, self.cm_width, self.cm_item_height)
+            if rect.collidepoint(mx, my):
+                return True
+                
+        if self.context_menu_active_category:
+            category = self.context_menu_active_category
+            i = self.categories.index(category)
+            sub_patterns = list(PATTERNS[category].keys())
+            sub_x = x + self.cm_width
+            sub_y = y + i * self.cm_item_height
+            
+            for j, pattern_name in enumerate(sub_patterns):
+                p_rect = pygame.Rect(sub_x, sub_y + j * self.cm_item_height, self.cm_width, self.cm_item_height)
+                if p_rect.collidepoint(mx, my):
+                    pattern_coords = PATTERNS[category][pattern_name]
+                    wx, wy = self.context_world_pos
+                    # Assign player based on left click (Green) or right click (Red)
+                    player_color = WHITE if button == 1 else BLACK
+                    
+                    # Manual injection of pattern, or call load_pattern if you update engine.py to support player argument
+                    for (px, py) in pattern_coords:
+                        self.universe.live_cells[(wx + px, wy + py)] = player_color
+                    
+                    self.context_menu_active = False
+                    self.context_menu_active_category = None
+                    return True
+                    
+        self.context_menu_active = False
+        self.context_menu_active_category = None
+        return False
+    
     def draw(self) -> None:
         self.screen.fill(self.bg_color)
         self.draw_grid()
 
-        # Render cells based on who owns them
         for (x, y), owner in self.universe.live_cells.items():
             sx, sy = self.world_to_screen(x, y)
             rect = pygame.Rect(sx, sy, self.cell_size, self.cell_size)
-            
             if owner == WHITE:
                 pygame.draw.rect(self.screen, self.p1_color, rect)
             elif owner == BLACK:
@@ -157,7 +223,7 @@ class Renderer:
         
         self.draw_menu()
         self.display_info()
-        # bringing all changes to actual screen display
+        self.draw_context_menu()
         pygame.display.flip()
 
     def handle_events(self) -> None:
@@ -172,22 +238,23 @@ class Renderer:
                     self.universe.clear()
                 elif event.key == pygame.K_g:
                     self.show_grid = not self.show_grid
-                elif event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS:
-                    # Increase simulation speed
+                elif event.key in (pygame.K_EQUALS, pygame.K_PLUS):
                     self.gen_per_sec = min(self.max_gen_per_sec, self.gen_per_sec + 1)
                     self.simulation_interval = 1.0 / self.gen_per_sec
                 elif event.key == pygame.K_MINUS:
-                    # Decrease simulation speed
                     self.gen_per_sec = max(self.min_gen_per_sec, self.gen_per_sec - 1)
                     self.simulation_interval = 1.0 / self.gen_per_sec
+                self.context_menu_active = False
 
-            # Handle mouse clicks
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = pygame.mouse.get_pos()
                 
-                # Check if click is in the menu area
+                if self.context_menu_active and event.button in (1, 3):
+                    if self.handle_context_menu_click(mx, my, event.button):
+                        continue
+                    self.context_menu_active = False
+                    
                 if my < self.menu_height:
-                    # Only left clicks interact with menu buttons
                     if event.button == 1:
                         if self.menu_buttons["Play/Pause"].collidepoint(mx, my):
                             self.paused = not self.paused
@@ -202,27 +269,39 @@ class Renderer:
                         elif self.menu_buttons["Speed -"].collidepoint(mx, my):
                             self.gen_per_sec = max(self.min_gen_per_sec, self.gen_per_sec - 1)
                             self.simulation_interval = 1.0 / self.gen_per_sec
+                        elif self.menu_buttons["Graph"].collidepoint(mx, my):
+                            if self.graph_process is None or not self.graph_process.is_alive():
+                                self.graph_queue = mp.Queue()
+                                self.graph_process = mp.Process(target=run_graph, args=(self.graph_queue,))
+                                self.graph_process.daemon = True
+                                self.graph_process.start()
+                                p1_pop, p2_pop = self.universe.population()
+                                self.graph_queue.put((self.universe.generation, p1_pop, p2_pop))
+                                self.last_graphed_gen = self.universe.generation
                 else:
-                    # Handle grid cell toggling if click is below the menu bar
-                    self.paused = True
-                    x, y = self.screen_to_world(mx, my)
+                    keys = pygame.key.get_pressed()
+                    is_ctrl_pressed = keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]
                     
-                    if event.button == 1:
-                        # Left Click -> Toggle Green (WHITE)
+                    if event.button == 3 and is_ctrl_pressed:
+                        self.context_menu_active = True
+                        self.context_menu_pos = (mx, my)
+                        self.context_world_pos = self.screen_to_world(mx, my)
+                        self.paused = True
+                    
+                    elif event.button == 1:
+                        self.paused = True
+                        x, y = self.screen_to_world(mx, my)
                         self.universe.toggle_cell(x, y, player=WHITE)
                     elif event.button == 3:
-                        # Right Click -> Toggle Red (BLACK)
+                        self.paused = True
+                        x, y = self.screen_to_world(mx, my)
                         self.universe.toggle_cell(x, y, player=BLACK)
 
             elif event.type == pygame.MOUSEWHEEL:
-                # screen center
                 cx = self.width // 2
                 cy = self.height // 2
-
-                # World coordinate at screen center BEFORE zoom
                 world_x = (cx - self.offset_x) / self.cell_size
                 world_y = (cy - self.offset_y) / self.cell_size
-
                 zoom_factor = 1.1
 
                 if event.y > 0:
@@ -233,8 +312,6 @@ class Renderer:
                     return
 
                 self.cell_size = new_size
-
-                # Recalculate offset so center stays stable
                 self.offset_x = int(cx - world_x * self.cell_size)
                 self.offset_y = int(cy - world_y * self.cell_size)
 
@@ -246,9 +323,7 @@ class Renderer:
         target_fps = self.target_fps
 
         while self.running:
-            # how much time last frame took(ms->s)
             dt = self.clock.tick(target_fps) / 1000.0
-
             self.handle_events()
 
             if not self.paused:
@@ -256,6 +331,13 @@ class Renderer:
                 while self.accumulator >= self.simulation_interval:
                     self.universe.step()
                     self.accumulator -= self.simulation_interval
+                    
+                    if self.graph_process and self.graph_process.is_alive():
+                        current_gen = self.universe.generation
+                        if current_gen != self.last_graphed_gen:
+                            p1_pop, p2_pop = self.universe.population()
+                            self.graph_queue.put((current_gen, p1_pop, p2_pop))
+                            self.last_graphed_gen = current_gen
             else:
                 self.accumulator = 0.0
             self.draw()
