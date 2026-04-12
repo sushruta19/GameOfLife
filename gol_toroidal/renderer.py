@@ -60,8 +60,9 @@ class Renderer:
         self.last_mouse_pos = (0, 0)
         
         self.bg_color = (15, 15, 15)
-        self.grid_line_color = (60, 60, 75)
-        self.cell_color = (0, 200, 120)
+        self.grid_line_color = (50, 50, 65)
+        self.cell_color = (0, 200, 120)        # Color for live cells
+        self.dead_cell_color = (25, 25, 30)    # Dark gray for solidifying the torus
 
         # --- Simulation Variables ---
         self.gen_per_sec = 2
@@ -278,10 +279,14 @@ class Renderer:
         # Store for mouse picking later
         self.rendered_polygons = polygons
 
-        # Draw to screen
+        # Draw to screen (Back to Front)
         for avg_z, points, x, y, is_live in polygons:
+            # We now fill ALL cells so the torus is a solid object.
+            # This hides the back face geometry and makes clicking accurate.
             if is_live:
                 pygame.draw.polygon(self.screen, self.cell_color, points)
+            else:
+                pygame.draw.polygon(self.screen, self.dead_cell_color, points)
             
             if self.show_grid:
                 # Anti-aliased lines drastically reduce the wiggly artifacting
