@@ -15,8 +15,8 @@ def run_graph(q: mp.Queue) -> None:
     ax.set_xlabel("Generation")
     ax.set_ylabel("Population")
     
-    line_p1, = ax.plot([], [], lw=2, color='green', label='Green (P1)', alpha=0.6)
-    line_p2, = ax.plot([], [], lw=2, color='red', label='Red (P2)', alpha=0.6)
+    line_p1, = ax.plot([], [], lw=2, color='#FFD700', label='Gold (P1)', alpha=0.6)
+    line_p2, = ax.plot([], [], lw=2, color='#7800C8', label='Purple (P2)', alpha=0.6)
     ax.legend()
     
     gens = []

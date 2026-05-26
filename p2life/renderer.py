@@ -40,8 +40,9 @@ class Renderer:
         self.offset_y = (self.height // 2) - ((self.height // 2) % self.cell_size)
         
         self.bg_color = (15, 15, 15)
-        self.p1_color = (0, 200, 120)    # Green (WHITE)
-        self.p2_color = (200, 40, 40)    # Red   (BLACK)
+        
+        self.p1_color = (255, 215, 0)    # Gold
+        self.p2_color = (120, 0, 200)   # Purple
 
         self.gen_per_sec = 2
         self.min_gen_per_sec = 1
@@ -107,8 +108,8 @@ class Renderer:
         target_fps = self.target_fps
         info_text = (
             f"Gen: {generation}   "
-            f"Green: {p1_pop}   "
-            f"Red: {p2_pop}   "
+            f"Gold: {p1_pop}   "
+            f"Purple: {p2_pop}   "
             f"Speed: {self.gen_per_sec} gen/s   "
             f"FPS: {target_fps}   "
         )
@@ -194,7 +195,7 @@ class Renderer:
                 if p_rect.collidepoint(mx, my):
                     pattern_coords = PATTERNS[category][pattern_name]
                     wx, wy = self.context_world_pos
-                    # Assign player based on left click (Green) or right click (Red)
+                    # Assign player based on left click (Gold) or right click (Purple)
                     player_color = WHITE if button == 1 else BLACK
                     
                     # Manual injection of pattern, or call load_pattern if you update engine.py to support player argument
